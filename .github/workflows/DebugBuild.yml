@@ -2,9 +2,10 @@ name: DebugBuild
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "mpv-plugin" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "mpv-plugin" ]
+  workflow_dispatch:
 
 env:
   SOLUTION_FILE_PATH: .
