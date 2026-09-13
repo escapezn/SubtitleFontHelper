@@ -77,12 +77,12 @@ local function inject_font_helper()
 
     local pid = mp.get_property_native("pid") or (utils.getpid and utils.getpid())
     if not pid then
-        msg.error("无法获取 mpv 进程 PID，取消字体注入")
+        msg.error("Failed to get mpv PID, aborting font injection.")
         return
     end
 
     local daemon_path = resolve_daemon_path()
-    msg.debug("找到 SubtitleFontAutoLoaderDaemon: " .. daemon_path)
+    msg.debug("Found SubtitleFontAutoLoaderDaemon: " .. daemon_path)
 
     local args = {
         daemon_path,
@@ -98,7 +98,7 @@ local function inject_font_helper()
         table.insert(args, "-no-tray")
     end
 
-    msg.info(string.format("正在为当前 mpv (PID: %s) 注入 SubtitleFontHelper...", pid))
+    msg.info(string.format("Injecting SubtitleFontHelper into current mpv (PID: %s)...", pid))
 
     -- 异步执行外部命令，不阻塞 mpv 播放主循环
     mp.command_native_async({
@@ -109,9 +109,9 @@ local function inject_font_helper()
         capture_stderr = false,
     }, function(success, res, err)
         if not success then
-            msg.error("调用 SubtitleFontAutoLoaderDaemon 失败: " .. tostring(err))
+            msg.error("Failed to execute SubtitleFontAutoLoaderDaemon: " .. tostring(err))
         else
-            msg.info(string.format("SubtitleFontHelper 注入成功 (PID: %s)", pid))
+            msg.info(string.format("SubtitleFontHelper injected successfully (PID: %s)", pid))
             injected = true
         end
     end)
