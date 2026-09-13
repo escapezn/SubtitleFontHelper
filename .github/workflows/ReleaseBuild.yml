@@ -2,14 +2,21 @@ name: ReleaseBuild
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.0.5). Leave empty if triggered on a tag or not publishing a release.'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
 
 env:
   SOLUTION_FILE_PATH: .
   BUILD_CONFIGURATION: Release
 
-
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -56,8 +63,22 @@ jobs:
       run: |
         .\copyFiles.ps1
 
+    - name: Archive release files
+      working-directory: ${{env.GITHUB_WORKSPACE}}
+      shell: pwsh
+      run: |
+        Compress-Archive -Path ReleaseBuild\* -DestinationPath SubtitleFontHelper.zip
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: ReleaseBuild
         path: ReleaseBuild\
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ inputs.tag_name != '' && inputs.tag_name || github.ref_name }}
+        files: SubtitleFontHelper.zip
+        generate_release_notes: true
