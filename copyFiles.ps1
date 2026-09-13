@@ -22,5 +22,5 @@ Copy-Item ../Build/x64/$configuration/FontLoadInterceptor64.dll .
 Copy-Item ../Build/x64/$configuration/Generated64.dll .
 Copy-Item ../Build/x64/$configuration/FontDatabaseBuilder.exe .
 Copy-Item ../Build/x64/$configuration/SubtitleFontAutoLoaderDaemon.exe .
-New-Item mpv-script -ItemType Directory -Force
-Copy-Item ../mpv-script/subtitle-font-helper.lua ./mpv-script/
+Copy-Item ../main.lua .
+

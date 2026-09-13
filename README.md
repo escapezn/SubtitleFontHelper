@@ -25,14 +25,10 @@
 - `-debug`：开启调试输出。
 
 ### mpv 专属伴生模式（推荐，免开机自启、免 WMI 轮询）
-若仅在 mpv 播放视频时需要自动加载字幕字体，可使用配套的 mpv Lua 脚本：
-1. 将 `mpv-script/subtitle-font-helper.lua` 复制至 mpv 的脚本目录（如 `~~/scripts/subtitle-font-helper.lua`）。
-2. 在 `mpv.conf` 中指定守护进程路径（若位于 mpv 脚本同级目录或系统 PATH 中可自动发现）：
-   ```ini
-   script-opts-append=subtitle_font_helper-daemon_path=C:\Path\To\SubtitleFontAutoLoaderDaemon.exe
-   ```
-3. 在 `SubtitleFontHelper.xml` 中配置您的字体索引文件路径，此时无需在配置文件中指定 `<MonitorProcess>` 节点。
-4. 打开 mpv 播放视频时，脚本会自动获取当前 mpv 的 PID 并异步唤起注入，无感加载字幕字体；关闭 mpv 时守护进程将随之自动退出，实现零后台常驻和零 CPU 轮询开销。
+若仅在 mpv 播放视频时需要自动加载字幕字体，可直接利用 mpv 的目录脚本机制开箱即用：
+1. 将构建产物目录 `ReleaseBuild`（或将包含 `main.lua`、`SubtitleFontAutoLoaderDaemon.exe`、DLL 的程序目录）整体放置在 mpv 的 `scripts/` 目录下（例如命名为 `~~/scripts/SubtitleFontHelper/`）。
+2. 在该目录下的 `SubtitleFontHelper.xml`（可复制自 `SubtitleFontHelper.example.xml`）中配置您的字体索引文件路径，此时无需在配置文件中指定 `<MonitorProcess>` 节点。
+3. 打开 mpv 播放视频时，mpv 会自动加载运行 `main.lua`，脚本自动定位同级目录下的守护程序并以 mpv 的 PID 异步唤起即时注入；关闭 mpv 时守护进程将随之自动退出，实现零后台常驻和零 CPU 轮询开销。无需在 `mpv.conf` 中手动配置任何路径。
 
 ### enableAutoStart.ps1
 在当前用户的开始菜单-启动目录下创建快捷方式，以实现自动启动（全局监视模式时使用）。

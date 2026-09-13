@@ -1,26 +1,21 @@
--- subtitle-font-helper.lua
+-- main.lua
 -- mpv 专属字幕字体自动注入辅助脚本
 --
 -- 功能：
--- 在 mpv 启动时自动获取当前 mpv 进程 PID，调用 SubtitleFontHelper 守护进程执行即时注入，
+-- 在 mpv 启动时自动获取当前 mpv 进程 PID，调用同级目录下的 SubtitleFontHelper 守护进程执行即时注入，
 -- 注入后即时拦截 GDI 字体加载，无需后台常驻 WMI 轮询进程。
 --
 -- 安装方法：
--- 1. 将本脚本放入 mpv 的 scripts 文件夹中（如 ~~/scripts/subtitle-font-helper.lua）
--- 2. 在 mpv.conf 中配置守护程序所在路径（若与脚本放在同级或已加入 PATH 则可自动识别）：
---    script-opts-append=subtitle_font_helper-daemon_path=C:\Path\To\SubtitleFontAutoLoaderDaemon.exe
---    或者创建 script-opts/subtitle_font_helper.conf：
---    daemon_path=C:\Path\To\SubtitleFontAutoLoaderDaemon.exe
---    auto_exit=yes
---    no_tray=no
+-- 将本程序所在文件夹（包含 main.lua、SubtitleFontAutoLoaderDaemon.exe、DLL 及配置文件）
+-- 整体放入 mpv 的 scripts 目录下（例如 ~~/scripts/SubtitleFontHelper/），即可开箱即用。
 
 local utils = require("mp.utils")
 local msg = require("mp.msg")
 local opt = require("mp.options")
 
 local options = {
-    -- 守护进程 SubtitleFontAutoLoaderDaemon.exe 的绝对路径或相对路径
-    -- 默认为空，脚本会自动尝试常见路径查找
+    -- 守护进程 SubtitleFontAutoLoaderDaemon.exe 的绝对路径（选填）
+    -- 默认保持为空，脚本会自动优先使用同级目录下的 SubtitleFontAutoLoaderDaemon.exe
     daemon_path = "",
 
     -- 是否在 mpv 退出时自动关闭守护进程（伴生生命周期）
@@ -46,16 +41,22 @@ end
 
 -- 探测 SubtitleFontAutoLoaderDaemon.exe 的位置
 local function resolve_daemon_path()
+    -- 1. 若用户在 script-opts 中明确指定了路径且文件存在，优先使用
     if options.daemon_path ~= "" and file_exists(options.daemon_path) then
         return options.daemon_path
     end
 
+    -- 2. 优先在脚本同级目录下寻找（标准安装结构）
     local script_dir = mp.get_script_directory()
     if script_dir then
+        local same_dir_exe = utils.join_path(script_dir, "SubtitleFontAutoLoaderDaemon.exe")
+        if file_exists(same_dir_exe) then
+            return same_dir_exe
+        end
+
+        -- 备用探测路径
         local candidates = {
-            utils.join_path(script_dir, "SubtitleFontAutoLoaderDaemon.exe"),
             utils.join_path(script_dir, "SubtitleFontHelper/SubtitleFontAutoLoaderDaemon.exe"),
-            utils.join_path(script_dir, "../SubtitleFontHelper/SubtitleFontAutoLoaderDaemon.exe"),
             utils.join_path(script_dir, "../ReleaseBuild/SubtitleFontAutoLoaderDaemon.exe"),
         }
         for _, path in ipairs(candidates) do
@@ -65,7 +66,7 @@ local function resolve_daemon_path()
         end
     end
 
-    -- 默认直接使用可执行文件名（依赖系统 PATH 或工作目录）
+    -- 3. 默认直接使用可执行文件名（依赖系统 PATH 或工作目录）
     return "SubtitleFontAutoLoaderDaemon.exe"
 end
 
