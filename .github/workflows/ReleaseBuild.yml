@@ -1,10 +1,6 @@
 name: ReleaseBuild
 
 on:
-  push:
-    branches: [ "master", "mpv-plugin" ]
-  pull_request:
-    branches: [ "master", "mpv-plugin" ]
   workflow_dispatch:
 
 env:
