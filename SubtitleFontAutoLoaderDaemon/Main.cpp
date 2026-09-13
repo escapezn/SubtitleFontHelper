@@ -12,6 +12,7 @@
 #include <queue>
 #include <variant>
 #include <filesystem>
+#include <thread>
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -25,23 +26,48 @@ namespace sfh
 {
 	bool g_debugOutputEnabled = false;
 
+	struct DaemonOptions
+	{
+		bool debug = false;
+		uint32_t injectPid = 0;
+		bool noMonitor = false;
+		bool autoExit = false;
+		bool noTray = false;
+	};
+
+	DaemonOptions g_options;
+
 	class SingleInstanceLock
 	{
 	private:
 		wil::unique_mutex m_mutex;
+		bool m_locked = false;
 	public:
-		SingleInstanceLock()
+		bool TryLock()
 		{
 			std::wstring mutexName = LR"_(SubtitleFontAutoLoaderMutex-)_";
 			mutexName += GetCurrentProcessUserSid();
 			m_mutex.create(mutexName.c_str());
-			if (WaitForSingleObject(m_mutex.get(), 0) != WAIT_OBJECT_0)
+			if (WaitForSingleObject(m_mutex.get(), 0) == WAIT_OBJECT_0)
+			{
+				m_locked = true;
+				return true;
+			}
+			return false;
+		}
+
+		void Lock()
+		{
+			if (!TryLock())
 				throw std::runtime_error("Another instance is running!");
 		}
 
 		~SingleInstanceLock()
 		{
-			m_mutex.ReleaseMutex();
+			if (m_locked)
+			{
+				m_mutex.ReleaseMutex();
+			}
 		}
 	};
 
@@ -140,6 +166,18 @@ namespace sfh
 		}
 
 	private:
+		void StartProcessWatcher(uint32_t pid)
+		{
+			std::thread([this, pid]() {
+				wil::unique_handle hProcess(OpenProcess(SYNCHRONIZE, FALSE, pid));
+				if (hProcess.is_valid())
+				{
+					WaitForSingleObject(hProcess.get(), INFINITE);
+				}
+				this->NotifyExit();
+			}).detach();
+		}
+
 		void OnInit(const std::vector<std::wstring>& cmdline)
 		{
 			{
@@ -154,7 +192,10 @@ namespace sfh
 			auto lruCachePath = selfPath / L"lruCache.txt";
 			auto cfg = ConfigFile::ReadFromFile(configPath);
 
-			m_service->m_systemTray = std::make_unique<SystemTray>(this);
+			if (!g_options.noTray)
+			{
+				m_service->m_systemTray = std::make_unique<SystemTray>(this);
+			}
 			std::vector<std::unique_ptr<FontDatabase>> dbs;
 			for (auto& indexFile : cfg->m_indexFile)
 			{
@@ -167,15 +208,32 @@ namespace sfh
 				m_service->m_queryService->GetRpcRequestHandler(),
 				m_service->m_prefetch->GetRpcFeedbackHandler());
 			m_service->m_queryService->Load(std::move(dbs));
-			m_service->m_processMonitor = std::make_unique<ProcessMonitor>(
-				this, std::chrono::milliseconds(cfg->wmiPollInterval));
-			std::vector<std::wstring> monitorProcess;
-			for (auto& process : cfg->m_monitorProcess)
+
+			if (!g_options.noMonitor && !cfg->m_monitorProcess.empty())
 			{
-				monitorProcess.emplace_back(process.m_name);
+				m_service->m_processMonitor = std::make_unique<ProcessMonitor>(
+					this, std::chrono::milliseconds(cfg->wmiPollInterval));
+				std::vector<std::wstring> monitorProcess;
+				for (auto& process : cfg->m_monitorProcess)
+				{
+					monitorProcess.emplace_back(process.m_name);
+				}
+				m_service->m_processMonitor->SetMonitorList(std::move(monitorProcess));
 			}
-			m_service->m_processMonitor->SetMonitorList(std::move(monitorProcess));
-			m_service->m_systemTray->NotifyFinishLoad();
+
+			if (g_options.injectPid != 0)
+			{
+				sfh::InjectInspector(g_options.injectPid);
+				if (g_options.autoExit)
+				{
+					StartProcessWatcher(g_options.injectPid);
+				}
+			}
+
+			if (m_service->m_systemTray)
+			{
+				m_service->m_systemTray->NotifyFinishLoad();
+			}
 		}
 
 		void OnException(std::exception_ptr exception)
@@ -203,6 +261,33 @@ namespace sfh
 			if (_wcsicmp(cmdline[i].c_str(), L"-debug") == 0)
 			{
 				g_debugOutputEnabled = true;
+				g_options.debug = true;
+			}
+			else if (_wcsicmp(cmdline[i].c_str(), L"-inject") == 0)
+			{
+				if (i + 1 < cmdline.size())
+				{
+					try
+					{
+						g_options.injectPid = std::stoul(cmdline[i + 1]);
+					}
+					catch (...)
+					{
+					}
+					++i;
+				}
+			}
+			else if (_wcsicmp(cmdline[i].c_str(), L"-no-monitor") == 0 || _wcsicmp(cmdline[i].c_str(), L"-nomonitor") == 0)
+			{
+				g_options.noMonitor = true;
+			}
+			else if (_wcsicmp(cmdline[i].c_str(), L"-auto-exit") == 0 || _wcsicmp(cmdline[i].c_str(), L"-autoexit") == 0)
+			{
+				g_options.autoExit = true;
+			}
+			else if (_wcsicmp(cmdline[i].c_str(), L"-no-tray") == 0 || _wcsicmp(cmdline[i].c_str(), L"-notray") == 0)
+			{
+				g_options.noTray = true;
 			}
 		}
 	}
@@ -218,6 +303,16 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCm
 	try
 	{
 		sfh::SingleInstanceLock lock;
+		if (!lock.TryLock())
+		{
+			// 已有 Daemon 实例在运行
+			if (sfh::g_options.injectPid != 0)
+			{
+				sfh::InjectInspector(sfh::g_options.injectPid);
+				return 0;
+			}
+			throw std::runtime_error("Another instance is running!");
+		}
 		return sfh::Daemon().DaemonMain(cmdline);
 	}
 	catch (std::exception& e)

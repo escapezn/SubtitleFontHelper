@@ -309,65 +309,7 @@ private:
 		}
 
 		if (!filteredOut)
-			InjectInspector(processIdVariant.uintVal, executablePath);
-	}
-
-	bool Is32BitProcess(uint32_t processId)
-	{
-		SYSTEM_INFO systemInfo;
-		GetNativeSystemInfo(&systemInfo);
-		if (systemInfo.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL)
-		{
-			return true;
-		}
-
-		wil::unique_handle hProcess(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId));
-		THROW_LAST_ERROR_IF(!hProcess.is_valid());
-		USHORT imageType, hostType;
-		THROW_LAST_ERROR_IF(IsWow64Process2(hProcess.get(), &imageType, &hostType) == FALSE);
-		if (imageType == IMAGE_FILE_MACHINE_I386)
-			return true;
-		return false;
-	}
-
-	void InjectInspector(uint32_t processId, const wchar_t* executablePath)
-	{
-		auto selfPathPtr = wil::GetModuleFileNameW();
-		std::wstring dllPath = selfPathPtr.get();
-		size_t lastSlash = dllPath.rfind(L'\\');
-		if (lastSlash != std::wstring::npos) dllPath.erase(lastSlash);
-		if (Is32BitProcess(processId))
-		{
-			dllPath += L"\\FontLoadInterceptor32.dll";
-		}
-		else
-		{
-			dllPath += L"\\FontLoadInterceptor64.dll";
-		}
-		std::wostringstream oss;
-		oss << L"rundll32.exe \"" << dllPath << "\",InjectProcess " << processId;
-
-		STARTUPINFOW startupInfo;
-		wil::unique_process_information processInfo;
-		RtlZeroMemory(&startupInfo, sizeof(startupInfo));
-		RtlZeroMemory(&processInfo, sizeof(processInfo));
-
-		startupInfo.cb = sizeof(startupInfo);
-		auto cmdline = oss.str();
-		cmdline.push_back(L'\0');
-
-		THROW_LAST_ERROR_IF(CreateProcessW(
-			nullptr,
-			cmdline.data(),
-			nullptr,
-			nullptr,
-			FALSE,
-			CREATE_UNICODE_ENVIRONMENT,
-			nullptr,
-			nullptr,
-			&startupInfo,
-			processInfo.addressof()
-		) == FALSE);
+			sfh::InjectInspector(processIdVariant.uintVal);
 	}
 };
 

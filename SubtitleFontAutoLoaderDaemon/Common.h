@@ -14,6 +14,9 @@ namespace sfh
 
 	std::wstring GetCurrentProcessUserSid();
 
+	bool Is32BitProcess(uint32_t processId);
+	void InjectInspector(uint32_t processId);
+
 	[[noreturn]] inline void MarkUnreachable()
 	{
 		__assume(false);

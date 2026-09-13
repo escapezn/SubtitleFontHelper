@@ -17,8 +17,25 @@
 主程序。运行后会从exe所在目录下的SubtitleFontHelper.xml读取配置文件。程序没有界面，但是会创建一个托盘图标，以方便控制。
 日志将会写入Windows事件查看器（应用程序和服务日志 - SubtitleFontHelper）。为了能正确地记录及显示日志，需要执行`registerETW.ps1`以注册事件清单。执行`unregisterETW.ps1`以反注册事件清单。注意，不注册事件清单不会导致功能出现问题，但是无法记录或浏览日志。注册事件清单后，如果要搬移程序位置或更新程序，请先反注册事件清单后再操作，否则可能提示文件被占用。
 
+**命令行参数：**
+- `-inject <PID>`：直接向指定 PID 的目标进程注入拦截 DLL。若后台无守护服务则会自动启动服务；若已有服务在运行，则由当前命令行迅速执行注入后即刻退出。
+- `-no-monitor`：禁用后台 WMI 进程轮询监控（纯被动提供 RPC 服务，0% CPU 占用）。
+- `-auto-exit`：伴生生命周期模式。当通过 `-inject` 注入的目标进程退出时，守护程序自动退出。
+- `-no-tray`：静默模式，不显示托盘图标。
+- `-debug`：开启调试输出。
+
+### mpv 专属伴生模式（推荐，免开机自启、免 WMI 轮询）
+若仅在 mpv 播放视频时需要自动加载字幕字体，可使用配套的 mpv Lua 脚本：
+1. 将 `mpv-script/subtitle-font-helper.lua` 复制至 mpv 的脚本目录（如 `~~/scripts/subtitle-font-helper.lua`）。
+2. 在 `mpv.conf` 中指定守护进程路径（若位于 mpv 脚本同级目录或系统 PATH 中可自动发现）：
+   ```ini
+   script-opts-append=subtitle_font_helper-daemon_path=C:\Path\To\SubtitleFontAutoLoaderDaemon.exe
+   ```
+3. 在 `SubtitleFontHelper.xml` 中配置您的字体索引文件路径，此时无需在配置文件中指定 `<MonitorProcess>` 节点。
+4. 打开 mpv 播放视频时，脚本会自动获取当前 mpv 的 PID 并异步唤起注入，无感加载字幕字体；关闭 mpv 时守护进程将随之自动退出，实现零后台常驻和零 CPU 轮询开销。
+
 ### enableAutoStart.ps1
-在当前用户的开始菜单-启动目录下创建快捷方式，以实现自动启动。
+在当前用户的开始菜单-启动目录下创建快捷方式，以实现自动启动（全局监视模式时使用）。
 
 ### disableAutoStart.ps1
 删除上面创建的快捷方式，以禁用自动启动。
@@ -31,10 +48,10 @@
 
 ### SubtitleFontHelper.xml
 配置文件，使用UTF-8编码。样例如下所示：
-```
+```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <ConfigFile wmiPollInterval="1000" lruSize="100">
-<IndexFile>E:\超级字体整合包 XZ\FontIndex.xml</IndexFile>
+<IndexFile>D:\Fonts\FontIndex.xml</IndexFile>
 <MonitorProcess>mpc-hc64_nvo.exe</MonitorProcess>
 <MonitorProcess>mpc-hc_nvo.exe</MonitorProcess>
 </ConfigFile>
@@ -42,8 +59,8 @@
  - `wmiPollInterval` 指定WMI查询的间隔时间，毫秒数。较低的值导致较高的CPU使用率。较高的值可能会导致注入进程不够及时。
  - `lruSize` 指定服务启动时预加载的条目最大大小。
  - `IndexFile`元素 每个元素指定了索引文件的位置，在这里列出程序所使用的索引。元素开始和结束之间的**所有**字符（包括换行等字符）将会被当作文件路径使用，若提示找不到文件请检查相关内容。
- - `MonitorProcess`元素 每个元素指定了要监视的进程的路径或者进程名。由于程序使用了`rundll32.exe`作为注入过程中的辅助程序，指定该进程可能会导致灾难性的后果。
+ - `MonitorProcess`元素 每个元素指定了要监视的进程的路径或者进程名。由于程序使用了`rundll32.exe`作为注入过程中的辅助程序，指定该进程可能会导致灾难性的后果。（在仅使用 mpv 伴生模式时，可省略此节点）。
 
 ### FontLoaderInterceptor32.dll
 ### FontLoaderInterceptor64.dll
-注入进程使用的Dll，请保持与主程序在同一目录下。
+注入进程使用的Dll，请保持与主程序在同一目录下。
