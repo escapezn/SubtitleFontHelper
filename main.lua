@@ -22,7 +22,7 @@ local options = {
     auto_exit = true,
 
     -- 是否隐藏守护进程托盘图标（静默伴生运行）
-    no_tray = false,
+    no_tray = true,
 
     -- 是否禁用该脚本
     disabled = false,
