@@ -2,7 +2,7 @@
 -- mpv 专属字幕字体自动注入辅助脚本
 --
 -- 功能：
--- 在 mpv 启动时自动获取当前 mpv 进程 PID，调用同级目录下的 SubtitleFontHelper 守护进程执行即时注入，
+-- 在 mpv 存在字幕时自动获取当前 mpv 进程 PID，调用同级目录下的 SubtitleFontHelper 守护进程执行即时注入，
 -- 注入后即时拦截 GDI 字体加载，无需后台常驻 WMI 轮询进程。
 --
 -- 安装方法：
@@ -24,6 +24,9 @@ local options = {
     -- 是否隐藏守护进程托盘图标（静默伴生运行）
     no_tray = true,
 
+    -- 是否仅当有字幕时才加载注入（设为 false 则在任何文件加载时均注入）
+    sub_only = true,
+
     -- 是否禁用该脚本
     disabled = false,
 }
@@ -31,6 +34,7 @@ local options = {
 opt.read_options(options, "subtitle_font_helper")
 
 local injected = false
+local injecting = false
 
 -- 辅助函数：判断文件是否存在
 local function file_exists(path)
@@ -70,8 +74,21 @@ local function resolve_daemon_path()
     return "SubtitleFontAutoLoaderDaemon.exe"
 end
 
+-- 判断当前是否激活了有效字幕轨（主字幕或副字幕）
+local function has_active_subtitles()
+    local sid = mp.get_property_native("sid")
+    if sid and sid ~= "no" and sid ~= false then
+        return true
+    end
+    local secondary_sid = mp.get_property_native("secondary-sid")
+    if secondary_sid and secondary_sid ~= "no" and secondary_sid ~= false then
+        return true
+    end
+    return false
+end
+
 local function inject_font_helper()
-    if injected or options.disabled then
+    if injected or injecting or options.disabled then
         return
     end
 
@@ -99,6 +116,7 @@ local function inject_font_helper()
     end
 
     msg.info(string.format("Injecting SubtitleFontHelper into current mpv (PID: %s)...", pid))
+    injecting = true
 
     -- 异步执行外部命令，不阻塞 mpv 播放主循环
     mp.command_native_async({
@@ -108,6 +126,7 @@ local function inject_font_helper()
         capture_stdout = false,
         capture_stderr = false,
     }, function(success, res, err)
+        injecting = false
         if not success then
             msg.error("Failed to execute SubtitleFontAutoLoaderDaemon: " .. tostring(err))
         else
@@ -117,5 +136,25 @@ local function inject_font_helper()
     end)
 end
 
--- 优先在 mpv 初始化时尽快注入，确保在字幕首次渲染前 Detours 挂钩生效
-mp.register_event("file-loaded", inject_font_helper)
+local function check_and_inject()
+    if injected or injecting or options.disabled then
+        return
+    end
+
+    if not options.sub_only or has_active_subtitles() then
+        inject_font_helper()
+    end
+end
+
+-- 监听字幕轨变动（切换字幕、加载外挂字幕、启用字幕等）
+local function on_sub_change(_, val)
+    if not options.sub_only or (val and val ~= "no" and val ~= false) then
+        check_and_inject()
+    end
+end
+
+mp.observe_property("sid", "native", on_sub_change)
+mp.observe_property("secondary-sid", "native", on_sub_change)
+
+-- 文件加载完成时检查当前文件是否包含有效选中的字幕
+mp.register_event("file-loaded", check_and_inject)
