@@ -74,14 +74,27 @@ local function resolve_daemon_path()
     return "SubtitleFontAutoLoaderDaemon.exe"
 end
 
+-- 判断字幕 ID 是否为有效选中的轨道编号（过滤初始状态 "auto"、禁用状态 "no"/false 以及空值）
+local function is_valid_sid(val)
+    if not val then return false end
+    local n = tonumber(val)
+    return n ~= nil and n > 0
+end
+
 -- 判断当前是否激活了有效字幕轨（主字幕或副字幕）
 local function has_active_subtitles()
     local sid = mp.get_property_native("sid")
-    if sid and sid ~= "no" and sid ~= false then
+    if is_valid_sid(sid) then
         return true
     end
     local secondary_sid = mp.get_property_native("secondary-sid")
-    if secondary_sid and secondary_sid ~= "no" and secondary_sid ~= false then
+    if is_valid_sid(secondary_sid) then
+        return true
+    end
+    if mp.get_property_native("current-tracks/sub") then
+        return true
+    end
+    if mp.get_property_native("current-tracks/secondary-sub") then
         return true
     end
     return false
@@ -148,13 +161,23 @@ end
 
 -- 监听字幕轨变动（切换字幕、加载外挂字幕、启用字幕等）
 local function on_sub_change(_, val)
-    if not options.sub_only or (val and val ~= "no" and val ~= false) then
+    if not options.sub_only or is_valid_sid(val) then
         check_and_inject()
     end
 end
 
 mp.observe_property("sid", "native", on_sub_change)
 mp.observe_property("secondary-sid", "native", on_sub_change)
+mp.observe_property("current-tracks/sub", "native", function(_, val)
+    if val then
+        check_and_inject()
+    end
+end)
+mp.observe_property("current-tracks/secondary-sub", "native", function(_, val)
+    if val then
+        check_and_inject()
+    end
+end)
 
 -- 文件加载完成时检查当前文件是否包含有效选中的字幕
 mp.register_event("file-loaded", check_and_inject)
